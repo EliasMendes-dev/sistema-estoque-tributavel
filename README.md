@@ -1,39 +1,57 @@
 # Sistema de Gerenciamento de Estoque Tributável
 
-Aplicação Java procedural para terminal que cadastra funcionários, clientes e produtos; controla entradas, vendas, estoque mínimo e uma simulação de tributação por regime: Simples Nacional, Lucro Presumido ou Lucro Real.
+Projeto acadêmico desenvolvido em Java para funcionar no terminal. O sistema controla funcionários, clientes, produtos e movimentações de estoque, além de apresentar uma estimativa didática de tributação.
 
-> As alíquotas exibidas são estimativas didáticas para o Projeto Integrador; não substituem uma apuração fiscal oficial.
+## Funcionalidades
 
-Projeto Java para terminal, sem interface gráfica e sem dependências externas. O código usa vetores, variáveis e métodos `static`, sem POO.
+- cadastro e listagem de funcionários;
+- cadastro e listagem de clientes por CPF;
+- cadastro de produtos;
+- registro de entrada e saída de estoque;
+- consulta do estoque completo e dos itens no estoque mínimo;
+- relatório do valor armazenado e do tributo estimado;
+- escolha do regime tributário;
+- validação de CPF, códigos, quantidades, preços e opções do menu;
+- modo de teste para conferir as principais regras do sistema.
 
-## Funções
+## Estrutura do repositório
 
-- Escolha e alteração do regime: Simples Nacional, Lucro Presumido ou Lucro Real.
-- Cadastro e listagem de funcionários (`FUN-001`) e clientes por CPF válido.
-- Cadastro de produto com código, categoria, preço, quantidade e estoque mínimo.
-- Produto e entrada vinculados a um funcionário cadastrado.
-- Saída/venda vinculada a um cliente cadastrado.
-- Consulta de estoque em submenu: lista todos os produtos ou somente os itens no estoque mínimo.
-- Cadastro de alíquota tributária individual por produto e relatório com o total estimado de tributos.
-- Opções do menu limitadas a um único algarismo (`0` a `9`).
-- Validação de códigos duplicados, números inválidos, preços inválidos, regime inválido, pessoas inexistentes, produto inexistente e saída maior que o estoque.
+| Caminho | Conteúdo |
+| --- | --- |
+| `src/Main.java` | Código principal em Java |
+| `pseudocodigo/` | Versão do algoritmo em Portugol |
+| `docs/DOCUMENTACAO.md` | Contexto, objetivos, regras e explicações |
+| `docs/fluxograma/` | Fluxograma em Draw.io e PDF |
+| `docs/relatorio/` | Documento acadêmico em Word |
+| `docs/apresentacao/` | Apresentação do projeto em PowerPoint |
 
-## Executar
+## Como executar
 
-Com um **JDK 17 ou superior** instalado, no terminal dentro desta pasta:
+É necessário ter o JDK 17 ou superior instalado.
 
 ```bash
-javac -d out src/*.java
+javac -d out src/Main.java
 java -cp out Main
 ```
 
-## Rodar os testes de robustez
+Para executar os testes de robustez:
 
 ```bash
-javac -d out src/*.java
 java -cp out Main --teste
 ```
 
-Os testes integrados tentam quebrar regras importantes: CPF com letras ou símbolos, CPF inválido, opção com mais de um algarismo, saída maior que o estoque e produto no estoque mínimo.
+## Regras principais
 
-> Observação: a alíquota de cada produto é uma estimativa cadastrada para fins acadêmicos. Em uso comercial, ela deve ser definida a partir do NCM, da UF, da operação e de orientação contábil/fiscal.
+- o funcionário deve existir antes do cadastro de produto e da entrada;
+- o cliente deve ter CPF válido e estar cadastrado antes da venda;
+- uma saída não pode ser maior que a quantidade disponível;
+- códigos não podem ser repetidos;
+- preço, quantidade, estoque mínimo e alíquota passam por validação.
+
+## Tributação
+
+As alíquotas usadas pelo programa têm finalidade acadêmica e servem para demonstrar o cálculo sobre o estoque. Uma aplicação comercial precisaria consultar a legislação e os dados fiscais vigentes.
+
+## Autores
+
+Vinícius Salgado, Vinícius Barbosa e José Elias.

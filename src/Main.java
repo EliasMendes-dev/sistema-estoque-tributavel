@@ -4,7 +4,11 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.util.NoSuchElementException;
 import java.util.Properties;
 import java.util.Scanner;
 
@@ -60,43 +64,54 @@ public class Main {
             return;
         }
 
-        if (dadosExistentes) {
-            System.out.println("Dados carregados de " + ARQUIVO_DADOS + ".");
-            System.out.println("Regime tributário: " + nomeRegime());
-        } else {
-            regime = lerRegime();
-            salvarDadosComAviso();
-        }
-
-        do {
-            mostrarMenu();
-            opcao = lerOpcao("Opção: ");
-
-            if (opcao == 1) {
-                cadastrarFuncionario();
-            } else if (opcao == 2) {
-                cadastrarCliente();
-            } else if (opcao == 3) {
-                listarFuncionarios();
-            } else if (opcao == 4) {
-                listarClientes();
-            } else if (opcao == 5) {
-                cadastrarProduto();
-            } else if (opcao == 6) {
-                registrarEntrada();
-            } else if (opcao == 7) {
-                registrarSaida();
-            } else if (opcao == 8) {
-                menuEstoque();
-            } else if (opcao == 9) {
-                menuRelatorios();
-            } else if (opcao != 0) {
-                System.out.println("Opção inválida.");
+        try {
+            if (dadosExistentes) {
+                System.out.println("Dados carregados de " + ARQUIVO_DADOS + ".");
+                System.out.println("Regime tributário: " + nomeRegime());
+            } else {
+                regime = lerRegime();
+                salvarDadosComAviso();
             }
-        } while (opcao != 0);
+
+            do {
+                mostrarMenu();
+                opcao = lerOpcao("Opção: ");
+
+                if (opcao == 1) {
+                    cadastrarFuncionario();
+                } else if (opcao == 2) {
+                    cadastrarCliente();
+                } else if (opcao == 3) {
+                    listarFuncionarios();
+                } else if (opcao == 4) {
+                    listarClientes();
+                } else if (opcao == 5) {
+                    cadastrarProduto();
+                } else if (opcao == 6) {
+                    registrarEntrada();
+                } else if (opcao == 7) {
+                    registrarSaida();
+                } else if (opcao == 8) {
+                    menuEstoque();
+                } else if (opcao == 9) {
+                    menuRelatorios();
+                } else if (opcao != 0) {
+                    System.out.println("Opção inválida.");
+                }
+            } while (opcao != 0);
+        } catch (NoSuchElementException e) {
+            System.out.println("\nEntrada encerrada.");
+        }
 
         salvarDadosComAviso();
         System.out.println("Sistema encerrado.");
+    }
+
+    static String lerLinha() {
+        if (!entrada.hasNextLine()) {
+            throw new NoSuchElementException("Fim da entrada");
+        }
+        return entrada.nextLine().trim();
     }
 
     // Mostra o menu principal.
@@ -134,8 +149,7 @@ public class Main {
         cargoFuncionarios[totalFuncionarios] = lerTextoObrigatorio("Cargo: ");
         totalFuncionarios++;
 
-        salvarDadosComAviso();
-        System.out.println("Funcionário cadastrado com sucesso.");
+        confirmarSalvamento("Funcionário cadastrado com sucesso.");
     }
 
     // Cadastra um cliente usando um CPF válido.
@@ -159,14 +173,18 @@ public class Main {
         emailClientes[totalClientes] = lerEmail();
         totalClientes++;
 
-        salvarDadosComAviso();
-        System.out.println("Cliente cadastrado com sucesso.");
+        confirmarSalvamento("Cliente cadastrado com sucesso.");
     }
 
     // Cadastra um produto e guarda suas informações de estoque e imposto.
     static void cadastrarProduto() {
         String codigo;
         String responsavel;
+
+        if (totalFuncionarios == 0) {
+            System.out.println("Cadastre um funcionário antes de cadastrar produtos.");
+            return;
+        }
 
         if (totalProdutos == LIMITE) {
             System.out.println("Limite de produtos atingido.");
@@ -181,6 +199,9 @@ public class Main {
         }
 
         responsavel = lerCodigoFuncionarioExistente("Código do funcionário responsável: ");
+        if (responsavel == null) {
+            return;
+        }
 
         codigoProdutos[totalProdutos] = codigo;
         nomeProdutos[totalProdutos] = lerTextoObrigatorio("Nome: ");
@@ -192,12 +213,16 @@ public class Main {
         responsavelProdutos[totalProdutos] = responsavel;
         totalProdutos++;
 
-        salvarDadosComAviso();
-        System.out.println("Produto cadastrado com sucesso.");
+        confirmarSalvamento("Produto cadastrado com sucesso.");
     }
 
     // Registra a entrada de novas unidades no estoque.
     static void registrarEntrada() {
+        if (totalFuncionarios == 0) {
+            System.out.println("Cadastre um funcionário antes de registrar entradas.");
+            return;
+        }
+
         String codigo = lerTextoObrigatorio("Código do produto: ").toUpperCase();
         int produto = buscarProduto(codigo);
 
@@ -207,11 +232,17 @@ public class Main {
         }
 
         int quantidade = lerInteiroPositivo("Quantidade de entrada: ");
+        if (quantidade > Integer.MAX_VALUE - quantidadeProdutos[produto]) {
+            System.out.println("Entrada excede o limite de quantidade do estoque.");
+            return;
+        }
         String funcionario = lerCodigoFuncionarioExistente("Código do funcionário: ");
+        if (funcionario == null) {
+            return;
+        }
 
         quantidadeProdutos[produto] = quantidadeProdutos[produto] + quantidade;
-        salvarDadosComAviso();
-        System.out.println("Entrada registrada por " + funcionario + ".");
+        confirmarSalvamento("Entrada registrada por " + funcionario + ".");
     }
 
     // Registra uma venda e diminui o estoque quando há quantidade disponível.
@@ -225,21 +256,26 @@ public class Main {
         }
 
         int quantidade = lerInteiroPositivo("Quantidade de saída: ");
-        String cpf = lerCpf();
+        if (quantidade > quantidadeProdutos[produto]) {
+            System.out.println("Estoque insuficiente.");
+            return;
+        }
+        if (totalClientes == 0) {
+            System.out.println("Cadastre um cliente antes de registrar vendas.");
+            return;
+        }
+        String cpf = lerCpf(true);
+        if (cpf == null) {
+            return;
+        }
 
         if (buscarCliente(cpf) == -1) {
             System.out.println("Cliente não encontrado.");
             return;
         }
 
-        if (quantidade > quantidadeProdutos[produto]) {
-            System.out.println("Estoque insuficiente.");
-            return;
-        }
-
         quantidadeProdutos[produto] = quantidadeProdutos[produto] - quantidade;
-        salvarDadosComAviso();
-        System.out.println("Venda registrada com sucesso.");
+        confirmarSalvamento("Venda registrada com sucesso.");
     }
 
     // Lista os funcionários cadastrados.
@@ -454,17 +490,35 @@ public class Main {
             dados.setProperty(prefixo + "responsavel", responsavelProdutos[i]);
         }
 
+        Path destino = Paths.get(ARQUIVO_DADOS);
+        Path temporario = Paths.get(ARQUIVO_DADOS + ".tmp");
         try (BufferedWriter escritor = Files.newBufferedWriter(
-                Paths.get(ARQUIVO_DADOS), StandardCharsets.UTF_8)) {
+                temporario, StandardCharsets.UTF_8)) {
             dados.store(escritor, "Dados do Sistema de Gerenciamento de Estoque");
+        }
+        try {
+            Files.move(temporario, destino, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            throw new IOException("não foi possível substituir o arquivo com segurança.", e);
         }
     }
 
-    static void salvarDadosComAviso() {
+    static boolean salvarDadosComAviso() {
         try {
             salvarDados();
+            return true;
         } catch (IOException e) {
             System.err.println("Não foi possível salvar os dados em " + ARQUIVO_DADOS + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    static void confirmarSalvamento(String sucesso) {
+        if (salvarDadosComAviso()) {
+            System.out.println(sucesso);
+        } else {
+            System.out.println("Alteração feita nesta execução, mas não foi salva no arquivo.");
         }
     }
 
@@ -564,7 +618,7 @@ public class Main {
 
         do {
             System.out.print(mensagem);
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (!somenteNumeros(texto) || texto.length() != 1) {
                 System.out.println("Digite apenas um algarismo de 0 a 9.");
@@ -580,7 +634,7 @@ public class Main {
 
         do {
             System.out.print(mensagem);
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (texto.length() < 2 || texto.length() > 80) {
                 System.out.println("Digite um texto entre 2 e 80 caracteres.");
@@ -596,7 +650,7 @@ public class Main {
 
         do {
             System.out.print(mensagem);
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (!somenteNumeros(texto) || texto.length() > 9) {
                 System.out.println("Digite apenas números, com no máximo 9 algarismos.");
@@ -628,7 +682,7 @@ public class Main {
 
         do {
             System.out.print("Preço unitário (ex.: 19,90): ");
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (!numeroDecimalValido(texto)) {
                 System.out.println("Digite um preço válido.");
@@ -652,7 +706,7 @@ public class Main {
 
         do {
             System.out.print("Alíquota tributária do produto (%): ");
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (!numeroDecimalValido(texto)) {
                 System.out.println("Digite uma alíquota válida.");
@@ -671,11 +725,19 @@ public class Main {
 
     // Lê o CPF e só aceita 11 números que passam no cálculo de validação.
     static String lerCpf() {
+        return lerCpf(false);
+    }
+
+    static String lerCpf(boolean permitirCancelar) {
         String cpf;
 
         do {
-            System.out.print("CPF do cliente (11 números): ");
-            cpf = entrada.nextLine().trim();
+            System.out.print("CPF do cliente (11 números)"
+                    + (permitirCancelar ? " ou 0 para cancelar" : "") + ": ");
+            cpf = lerLinha();
+            if (permitirCancelar && cpf.equals("0")) {
+                return null;
+            }
 
             if (!cpfValido(cpf)) {
                 System.out.println("CPF inválido. Digite somente um CPF válido com 11 números.");
@@ -691,7 +753,7 @@ public class Main {
 
         do {
             System.out.print("E-mail: ");
-            email = entrada.nextLine().trim();
+            email = lerLinha();
 
             if (!emailValido(email)) {
                 System.out.println("Use o formato nome@dominio.com.");
@@ -707,7 +769,7 @@ public class Main {
 
         do {
             System.out.print("Código do funcionário (FUN-001): ");
-            codigo = entrada.nextLine().trim().toUpperCase();
+            codigo = lerLinha().toUpperCase();
 
             if (!codigoFuncionarioValido(codigo)) {
                 System.out.println("Use o formato FUN-001 até FUN-999999.");
@@ -722,8 +784,11 @@ public class Main {
         String codigo;
 
         do {
-            System.out.print(mensagem);
-            codigo = entrada.nextLine().trim().toUpperCase();
+            System.out.print(mensagem + "(0 para cancelar) ");
+            codigo = lerLinha().toUpperCase();
+            if (codigo.equals("0")) {
+                return null;
+            }
 
             if (buscarFuncionario(codigo) == -1) {
                 System.out.println("Funcionário não encontrado.");
@@ -739,7 +804,7 @@ public class Main {
 
         do {
             System.out.print("Código do produto: ");
-            codigo = entrada.nextLine().trim().toUpperCase();
+            codigo = lerLinha().toUpperCase();
 
             if (codigo.length() < 3 || codigo.length() > 20 || codigo.indexOf(' ') != -1) {
                 System.out.println("O código deve ter de 3 a 20 caracteres e não pode ter espaço.");
@@ -961,3 +1026,4 @@ public class Main {
         return -1;
     }
 }
+

@@ -4,7 +4,16 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
+import java.nio.file.StandardOpenOption;
+import java.util.Locale;
+import java.util.NoSuchElementException;
 import java.util.Properties;
 import java.util.Scanner;
 
@@ -13,6 +22,44 @@ public class Main {
     static Scanner entrada = criarScanner();
     static final int LIMITE = 100;
     static final String ARQUIVO_DADOS = "estoque.txt";
+    static boolean fimDaEntrada = false;
+    static boolean prontoParaSalvar = false;
+    static FileChannel canalBloqueio;
+    static FileLock bloqueio;
+
+    static Path caminhoDados() {
+        return Paths.get(System.getProperty("user.home"), "SistemaEstoqueTributavel", ARQUIVO_DADOS);
+    }
+
+    static boolean iniciarBloqueio() throws IOException {
+        Path arquivoBloqueio = caminhoDados().resolveSibling("estoque.lock");
+        Files.createDirectories(arquivoBloqueio.getParent());
+        canalBloqueio = FileChannel.open(arquivoBloqueio,
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+        try {
+            bloqueio = canalBloqueio.tryLock();
+        } catch (OverlappingFileLockException e) {
+            bloqueio = null;
+        }
+        if (bloqueio == null) {
+            canalBloqueio.close();
+            return false;
+        }
+        return true;
+    }
+
+    static void encerrarBloqueio() {
+        try {
+            if (bloqueio != null) {
+                bloqueio.release();
+            }
+            if (canalBloqueio != null) {
+                canalBloqueio.close();
+            }
+        } catch (IOException e) {
+            System.err.println("Não foi possível liberar o bloqueio: " + e.getMessage());
+        }
+    }
 
     // Dados dos clientes.
     static String[] cpfClientes = new String[LIMITE];
@@ -52,51 +99,84 @@ public class Main {
         int opcao;
 
         System.out.println("=== Sistema de Gerenciamento de Estoque Tributável ===");
+        try {
+            if (!iniciarBloqueio()) {
+                System.err.println("O estoque já está aberto em outra cópia do programa.");
+                System.exit(1);
+                return;
+            }
+        } catch (IOException e) {
+            System.err.println("Não foi possível bloquear o arquivo de dados: " + e.getMessage());
+            System.exit(1);
+            return;
+        }
         boolean dadosExistentes;
         try {
             dadosExistentes = carregarDados();
         } catch (IOException e) {
-            System.err.println("Não foi possível carregar " + ARQUIVO_DADOS + ": " + e.getMessage());
+            System.err.println("Não foi possível carregar " + caminhoDados() + ": " + e.getMessage());
+            System.err.println("O arquivo foi preservado. Confira-o antes de corrigir ou restaurar uma cópia.");
+            System.exit(1);
             return;
         }
 
-        if (dadosExistentes) {
-            System.out.println("Dados carregados de " + ARQUIVO_DADOS + ".");
-            System.out.println("Regime tributário: " + nomeRegime());
-        } else {
-            regime = lerRegime();
-            salvarDadosComAviso();
+        try {
+            if (dadosExistentes) {
+                prontoParaSalvar = true;
+                System.out.println("Dados carregados de " + caminhoDados() + ".");
+                System.out.println("Regime tributário: " + nomeRegime());
+            } else {
+                regime = lerRegime();
+                prontoParaSalvar = true;
+                salvarDadosComAviso();
+            }
+
+            do {
+                mostrarMenu();
+                opcao = lerOpcao("Opção: ");
+
+                if (opcao == 1) {
+                    cadastrarFuncionario();
+                } else if (opcao == 2) {
+                    cadastrarCliente();
+                } else if (opcao == 3) {
+                    listarFuncionarios();
+                } else if (opcao == 4) {
+                    listarClientes();
+                } else if (opcao == 5) {
+                    cadastrarProduto();
+                } else if (opcao == 6) {
+                    registrarEntrada();
+                } else if (opcao == 7) {
+                    registrarSaida();
+                } else if (opcao == 8) {
+                    menuEstoque();
+                } else if (opcao == 9) {
+                    menuRelatorios();
+                } else if (opcao != 0) {
+                    System.out.println("Opção inválida.");
+                }
+            } while (opcao != 0);
+        } catch (NoSuchElementException e) {
+            if (!fimDaEntrada) {
+                throw e;
+            }
+            System.out.println("\nEntrada encerrada.");
         }
 
-        do {
-            mostrarMenu();
-            opcao = lerOpcao("Opção: ");
-
-            if (opcao == 1) {
-                cadastrarFuncionario();
-            } else if (opcao == 2) {
-                cadastrarCliente();
-            } else if (opcao == 3) {
-                listarFuncionarios();
-            } else if (opcao == 4) {
-                listarClientes();
-            } else if (opcao == 5) {
-                cadastrarProduto();
-            } else if (opcao == 6) {
-                registrarEntrada();
-            } else if (opcao == 7) {
-                registrarSaida();
-            } else if (opcao == 8) {
-                menuEstoque();
-            } else if (opcao == 9) {
-                menuRelatorios();
-            } else if (opcao != 0) {
-                System.out.println("Opção inválida.");
-            }
-        } while (opcao != 0);
-
-        salvarDadosComAviso();
+        if (prontoParaSalvar && !salvarDadosComAviso()) {
+            System.out.println("Atenção: os dados desta execução não foram salvos no arquivo.");
+        }
         System.out.println("Sistema encerrado.");
+        encerrarBloqueio();
+    }
+
+    static String lerLinha() {
+        if (!entrada.hasNextLine()) {
+            fimDaEntrada = true;
+            throw new NoSuchElementException("Fim da entrada");
+        }
+        return entrada.nextLine().trim();
     }
 
     // Mostra o menu principal.
@@ -134,8 +214,7 @@ public class Main {
         cargoFuncionarios[totalFuncionarios] = lerTextoObrigatorio("Cargo: ");
         totalFuncionarios++;
 
-        salvarDadosComAviso();
-        System.out.println("Funcionário cadastrado com sucesso.");
+        confirmarSalvamento("Funcionário cadastrado com sucesso.");
     }
 
     // Cadastra um cliente usando um CPF válido.
@@ -159,14 +238,18 @@ public class Main {
         emailClientes[totalClientes] = lerEmail();
         totalClientes++;
 
-        salvarDadosComAviso();
-        System.out.println("Cliente cadastrado com sucesso.");
+        confirmarSalvamento("Cliente cadastrado com sucesso.");
     }
 
     // Cadastra um produto e guarda suas informações de estoque e imposto.
     static void cadastrarProduto() {
         String codigo;
         String responsavel;
+
+        if (totalFuncionarios == 0) {
+            System.out.println("Cadastre um funcionário antes de cadastrar produtos.");
+            return;
+        }
 
         if (totalProdutos == LIMITE) {
             System.out.println("Limite de produtos atingido.");
@@ -181,6 +264,9 @@ public class Main {
         }
 
         responsavel = lerCodigoFuncionarioExistente("Código do funcionário responsável: ");
+        if (responsavel == null) {
+            return;
+        }
 
         codigoProdutos[totalProdutos] = codigo;
         nomeProdutos[totalProdutos] = lerTextoObrigatorio("Nome: ");
@@ -192,13 +278,17 @@ public class Main {
         responsavelProdutos[totalProdutos] = responsavel;
         totalProdutos++;
 
-        salvarDadosComAviso();
-        System.out.println("Produto cadastrado com sucesso.");
+        confirmarSalvamento("Produto cadastrado com sucesso.");
     }
 
     // Registra a entrada de novas unidades no estoque.
     static void registrarEntrada() {
-        String codigo = lerTextoObrigatorio("Código do produto: ").toUpperCase();
+        if (totalFuncionarios == 0) {
+            System.out.println("Cadastre um funcionário antes de registrar entradas.");
+            return;
+        }
+
+        String codigo = lerTextoObrigatorio("Código do produto: ").toUpperCase(Locale.ROOT);
         int produto = buscarProduto(codigo);
 
         if (produto == -1) {
@@ -207,16 +297,22 @@ public class Main {
         }
 
         int quantidade = lerInteiroPositivo("Quantidade de entrada: ");
+        if (quantidade > Integer.MAX_VALUE - quantidadeProdutos[produto]) {
+            System.out.println("Entrada excede o limite de quantidade do estoque.");
+            return;
+        }
         String funcionario = lerCodigoFuncionarioExistente("Código do funcionário: ");
+        if (funcionario == null) {
+            return;
+        }
 
         quantidadeProdutos[produto] = quantidadeProdutos[produto] + quantidade;
-        salvarDadosComAviso();
-        System.out.println("Entrada registrada por " + funcionario + ".");
+        confirmarSalvamento("Entrada registrada por " + funcionario + ".");
     }
 
     // Registra uma venda e diminui o estoque quando há quantidade disponível.
     static void registrarSaida() {
-        String codigo = lerTextoObrigatorio("Código do produto: ").toUpperCase();
+        String codigo = lerTextoObrigatorio("Código do produto: ").toUpperCase(Locale.ROOT);
         int produto = buscarProduto(codigo);
 
         if (produto == -1) {
@@ -225,21 +321,26 @@ public class Main {
         }
 
         int quantidade = lerInteiroPositivo("Quantidade de saída: ");
-        String cpf = lerCpf();
+        if (quantidade > quantidadeProdutos[produto]) {
+            System.out.println("Estoque insuficiente.");
+            return;
+        }
+        if (totalClientes == 0) {
+            System.out.println("Cadastre um cliente antes de registrar vendas.");
+            return;
+        }
+        String cpf = lerCpf(true);
+        if (cpf == null) {
+            return;
+        }
 
         if (buscarCliente(cpf) == -1) {
             System.out.println("Cliente não encontrado.");
             return;
         }
 
-        if (quantidade > quantidadeProdutos[produto]) {
-            System.out.println("Estoque insuficiente.");
-            return;
-        }
-
         quantidadeProdutos[produto] = quantidadeProdutos[produto] - quantidade;
-        salvarDadosComAviso();
-        System.out.println("Venda registrada com sucesso.");
+        confirmarSalvamento("Venda registrada com sucesso.");
     }
 
     // Lista os funcionários cadastrados.
@@ -367,13 +468,20 @@ public class Main {
 
     // Carrega os dados textuais salvos; um arquivo inválido impede iniciar sem os dados.
     static boolean carregarDados() throws IOException {
-        if (!Files.exists(Paths.get(ARQUIVO_DADOS))) {
-            return false;
+        Path arquivo = caminhoDados();
+        if (!Files.exists(arquivo)) {
+            Path antigo = Paths.get(ARQUIVO_DADOS);
+            if (!Files.exists(antigo)) {
+                return false;
+            }
+            Files.createDirectories(arquivo.getParent());
+            Files.copy(antigo, arquivo);
+            System.out.println("Dados antigos copiados para " + arquivo + ".");
         }
 
         Properties dados = new Properties();
         try (BufferedReader leitor = Files.newBufferedReader(
-                Paths.get(ARQUIVO_DADOS), StandardCharsets.UTF_8)) {
+                arquivo, StandardCharsets.UTF_8)) {
             try {
                 dados.load(leitor);
             } catch (IllegalArgumentException e) {
@@ -416,7 +524,59 @@ public class Main {
             responsavelProdutos[i] = lerTextoSalvo(dados, prefixo + "responsavel");
         }
 
+        validarDadosCarregados();
         return true;
+    }
+
+    static void validarDadosCarregados() throws IOException {
+        for (int i = 0; i < totalFuncionarios; i++) {
+            if (!codigoFuncionarioValido(codigoFuncionarios[i])) {
+                throw new IOException("funcionário " + i + ": código inválido " + codigoFuncionarios[i]);
+            }
+            if (nomeFuncionarios[i].isBlank() || cargoFuncionarios[i].isBlank()) {
+                throw new IOException("funcionário " + i + ": nome ou cargo vazio");
+            }
+            for (int j = 0; j < i; j++) {
+                if (codigoFuncionarios[i].equalsIgnoreCase(codigoFuncionarios[j])) {
+                    throw new IOException("código de funcionário repetido: " + codigoFuncionarios[i]);
+                }
+            }
+        }
+        for (int i = 0; i < totalClientes; i++) {
+            if (nomeClientes[i].isBlank()) {
+                throw new IOException("cliente " + i + ": nome vazio");
+            }
+            if (!cpfValido(cpfClientes[i])) {
+                System.err.println("Aviso: cliente " + i + ", CPF antigo inválido: " + cpfClientes[i]);
+            }
+            if (!emailValido(emailClientes[i])) {
+                System.err.println("Aviso: cliente " + i + ", e-mail antigo inválido: " + emailClientes[i]);
+            }
+            for (int j = 0; j < i; j++) {
+                if (cpfClientes[i].equals(cpfClientes[j])) {
+                    throw new IOException("CPF repetido: " + cpfClientes[i]);
+                }
+            }
+        }
+        for (int i = 0; i < totalProdutos; i++) {
+            String codigo = codigoProdutos[i].toUpperCase(Locale.ROOT);
+            codigoProdutos[i] = codigo;
+            if (codigo.length() < 3 || codigo.length() > 20 || codigo.indexOf(' ') != -1) {
+                throw new IOException("produto " + i + ": código inválido " + codigo);
+            }
+            if (nomeProdutos[i].isBlank() || categoriaProdutos[i].isBlank()) {
+                throw new IOException("produto " + i + ": nome ou categoria vazia");
+            }
+            if (buscarFuncionario(responsavelProdutos[i]) == -1) {
+                throw new IOException("produto " + i + ": responsável não cadastrado "
+                        + responsavelProdutos[i]);
+            }
+            for (int j = 0; j < i; j++) {
+                if (codigo.equalsIgnoreCase(codigoProdutos[j])) {
+                    throw new IOException("código de produto repetido: " + codigo);
+                }
+            }
+        }
     }
 
     // Grava os cadastros e o regime em texto UTF-8.
@@ -454,17 +614,48 @@ public class Main {
             dados.setProperty(prefixo + "responsavel", responsavelProdutos[i]);
         }
 
-        try (BufferedWriter escritor = Files.newBufferedWriter(
-                Paths.get(ARQUIVO_DADOS), StandardCharsets.UTF_8)) {
-            dados.store(escritor, "Dados do Sistema de Gerenciamento de Estoque");
+        Path destino = caminhoDados();
+        Files.createDirectories(destino.getParent());
+        Path temporario = Files.createTempFile(destino.getParent(), "estoque-", ".tmp");
+        try {
+            try (BufferedWriter escritor = Files.newBufferedWriter(
+                    temporario, StandardCharsets.UTF_8)) {
+                dados.store(escritor, "Dados do Sistema de Gerenciamento de Estoque");
+            }
+            try {
+                Files.move(temporario, destino, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                if (Files.exists(destino)) {
+                    Files.copy(destino, destino.resolveSibling(ARQUIVO_DADOS + ".bak"),
+                            StandardCopyOption.REPLACE_EXISTING);
+                }
+                Files.move(temporario, destino, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            try {
+                Files.deleteIfExists(temporario);
+            } catch (IOException e) {
+                System.err.println("Não foi possível remover o arquivo temporário: " + e.getMessage());
+            }
         }
     }
 
-    static void salvarDadosComAviso() {
+    static boolean salvarDadosComAviso() {
         try {
             salvarDados();
+            return true;
         } catch (IOException e) {
-            System.err.println("Não foi possível salvar os dados em " + ARQUIVO_DADOS + ": " + e.getMessage());
+            System.err.println("Não foi possível salvar os dados em " + caminhoDados() + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    static void confirmarSalvamento(String sucesso) {
+        if (salvarDadosComAviso()) {
+            System.out.println(sucesso);
+        } else {
+            System.out.println("Alteração feita nesta execução, mas não foi salva no arquivo.");
         }
     }
 
@@ -564,7 +755,7 @@ public class Main {
 
         do {
             System.out.print(mensagem);
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (!somenteNumeros(texto) || texto.length() != 1) {
                 System.out.println("Digite apenas um algarismo de 0 a 9.");
@@ -580,7 +771,7 @@ public class Main {
 
         do {
             System.out.print(mensagem);
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (texto.length() < 2 || texto.length() > 80) {
                 System.out.println("Digite um texto entre 2 e 80 caracteres.");
@@ -596,7 +787,7 @@ public class Main {
 
         do {
             System.out.print(mensagem);
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (!somenteNumeros(texto) || texto.length() > 9) {
                 System.out.println("Digite apenas números, com no máximo 9 algarismos.");
@@ -628,7 +819,7 @@ public class Main {
 
         do {
             System.out.print("Preço unitário (ex.: 19,90): ");
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (!numeroDecimalValido(texto)) {
                 System.out.println("Digite um preço válido.");
@@ -652,7 +843,7 @@ public class Main {
 
         do {
             System.out.print("Alíquota tributária do produto (%): ");
-            texto = entrada.nextLine().trim();
+            texto = lerLinha();
 
             if (!numeroDecimalValido(texto)) {
                 System.out.println("Digite uma alíquota válida.");
@@ -671,16 +862,25 @@ public class Main {
 
     // Lê o CPF e só aceita 11 números que passam no cálculo de validação.
     static String lerCpf() {
+        return lerCpf(false);
+    }
+
+    static String lerCpf(boolean permitirCancelar) {
         String cpf;
 
         do {
-            System.out.print("CPF do cliente (11 números): ");
-            cpf = entrada.nextLine().trim();
+            System.out.print("CPF do cliente (11 números)"
+                    + (permitirCancelar ? " ou 0 para cancelar" : "") + ": ");
+            cpf = lerLinha();
+            if (permitirCancelar && cpf.equals("0")) {
+                System.out.println("Venda cancelada.");
+                return null;
+            }
 
-            if (!cpfValido(cpf)) {
+            if (!cpfValido(cpf) && !(permitirCancelar && buscarCliente(cpf) != -1)) {
                 System.out.println("CPF inválido. Digite somente um CPF válido com 11 números.");
             }
-        } while (!cpfValido(cpf));
+        } while (!cpfValido(cpf) && !(permitirCancelar && buscarCliente(cpf) != -1));
 
         return cpf;
     }
@@ -691,7 +891,7 @@ public class Main {
 
         do {
             System.out.print("E-mail: ");
-            email = entrada.nextLine().trim();
+            email = lerLinha();
 
             if (!emailValido(email)) {
                 System.out.println("Use o formato nome@dominio.com.");
@@ -707,7 +907,7 @@ public class Main {
 
         do {
             System.out.print("Código do funcionário (FUN-001): ");
-            codigo = entrada.nextLine().trim().toUpperCase();
+            codigo = lerLinha().toUpperCase(Locale.ROOT);
 
             if (!codigoFuncionarioValido(codigo)) {
                 System.out.println("Use o formato FUN-001 até FUN-999999.");
@@ -720,10 +920,18 @@ public class Main {
     // Lê um funcionário e confirma se ele já foi cadastrado.
     static String lerCodigoFuncionarioExistente(String mensagem) {
         String codigo;
+        String rotulo = mensagem.trim();
+        if (rotulo.endsWith(":")) {
+            rotulo = rotulo.substring(0, rotulo.length() - 1);
+        }
 
         do {
-            System.out.print(mensagem);
-            codigo = entrada.nextLine().trim().toUpperCase();
+            System.out.print(rotulo + " (0 para cancelar): ");
+            codigo = lerLinha().toUpperCase(Locale.ROOT);
+            if (codigo.equals("0")) {
+                System.out.println("Operação cancelada.");
+                return null;
+            }
 
             if (buscarFuncionario(codigo) == -1) {
                 System.out.println("Funcionário não encontrado.");
@@ -739,7 +947,7 @@ public class Main {
 
         do {
             System.out.print("Código do produto: ");
-            codigo = entrada.nextLine().trim().toUpperCase();
+            codigo = lerLinha().toUpperCase(Locale.ROOT);
 
             if (codigo.length() < 3 || codigo.length() > 20 || codigo.indexOf(' ') != -1) {
                 System.out.println("O código deve ter de 3 a 20 caracteres e não pode ter espaço.");
@@ -855,7 +1063,7 @@ public class Main {
         int arroba = -1;
         int ponto = -1;
 
-        if (email.length() < 6 || email.length() > 80) {
+        if (email.length() < 6 || email.length() > 80 || email.contains("..")) {
             return false;
         }
 
@@ -865,6 +1073,9 @@ public class Main {
             }
 
             if (email.charAt(i) == '@') {
+                if (arroba != -1) {
+                    return false;
+                }
                 arroba = i;
             }
 
@@ -873,7 +1084,8 @@ public class Main {
             }
         }
 
-        return arroba > 0 && ponto > arroba + 1 && ponto < email.length() - 1;
+        return arroba > 0 && ponto > arroba + 1 && ponto < email.length() - 1
+                && email.charAt(arroba + 1) != '.';
     }
 
     // Calcula os dois últimos dígitos para validar o CPF.
@@ -961,3 +1173,4 @@ public class Main {
         return -1;
     }
 }
+

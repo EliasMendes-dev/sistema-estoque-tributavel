@@ -5,5 +5,8 @@ out/
 .vscode/
 *.log
 estoque.txt
+estoque.txt.bak
+estoque.lock
+estoque-*.tmp
 .DS_Store
 Thumbs.db

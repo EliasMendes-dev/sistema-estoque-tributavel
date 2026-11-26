@@ -12,7 +12,7 @@ Projeto acadêmico desenvolvido em Java para funcionar no terminal. O sistema co
 - relatório do valor armazenado e do tributo estimado;
 - escolha do regime tributário;
 - validação de CPF, códigos, quantidades, preços e opções do menu;
-- modo de teste para conferir as principais regras do sistema.
+- persistência local em arquivo de texto.
 
 ## Estrutura do repositório
 
@@ -34,17 +34,13 @@ javac -d out src/Main.java
 java -cp out Main
 ```
 
-Para executar os testes de robustez:
-
-```bash
-java -cp out Main --teste
-```
-
 ## Persistencia dos dados
 
-Os cadastros, o estoque e o regime tributario sao salvos automaticamente em `estoque.txt`, no diretorio em que o programa e executado, e carregados na proxima inicializacao. O arquivo usa texto no formato chave-valor e pode ser removido para iniciar um cadastro novo.
+Os cadastros, o estoque e o regime tributário são salvos em `SistemaEstoqueTributavel/estoque.txt`, dentro da pasta pessoal do usuário do computador. No Windows, por exemplo, o caminho é `C:\\Users\\SEU_USUARIO\\SistemaEstoqueTributavel\\estoque.txt`. Cada perfil do sistema operacional tem seus próprios dados; o programa não sincroniza dados entre computadores.
 
-O arquivo contem dados pessoais, como CPF e e-mail, e nao e criptografado. Mantenha-o em um local protegido e nao o compartilhe.
+Na primeira abertura desta versão, se existir um `estoque.txt` na pasta de execução e ainda não houver um arquivo na pasta pessoal, o sistema copia os dados antigos para lá sem apagar o original. Se o arquivo for removido, o programa pede o regime novamente e cria um novo. O arquivo `estoque.lock` impede duas instâncias simultâneas; sua presença após fechar o programa é normal. Em sistemas sem substituição atômica, um `estoque.txt.bak` pode guardar a versão anterior.
+
+Arquivos antigos com CPF ou e-mail inválido geram avisos, mas continuam acessíveis. Novos cadastros exigem validação. O TXT contém CPF e e-mail sem criptografia; mantenha a pasta pessoal protegida e não compartilhe o arquivo.
 
 ## Regras principais
 
